@@ -102,6 +102,10 @@ function zoomed({ transform }) {
   wiring_diagram.attr("transform", transform);
 }
 
+function getDestNodeIds(d) {
+  return d.data.dest_node_ids || [];
+}
+
 function reset() {
   svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
 }
@@ -143,6 +147,9 @@ function Pack(data) {
     .enter()
     .append("g")
     .attr("class", "node")
+    .attr("data-id", function (d) {
+      return d.data.node_id;
+    })
     .attr("transform", function (d) {
       return `translate(${d.x},${d.y})`;
     });
@@ -229,33 +236,50 @@ function Pack(data) {
       y_shift = parseFloat(y_shift) - config.y_offset - config.label_y_offset;
       return `translate(${x_shift},${y_shift})`;
     });
-  var wire_group = node
-    .append("g")
+  var wire_group = node.append("g");
+  wire_group
     .attr("class", "wire")
     .attr("start_node_id", function (d) {
       return d.data.node_id;
     })
-    .attr("dest_node_ids", function (d) {
-      return d.data.dest_node_ids || [];
+    .attr("dest_node_ids", getDestNodeIds);
+  wire_group
+    .selectAll("_")
+    .data(function (d) {
+      // retain the original node alongside the IDs
+      return getDestNodeIds(d).map((id) => [d, id]);
     })
+    .enter()
     .append("path")
+    .attr("dest_node_id", function (d) {
+      let [node, node_id] = d;
+      return node_id;
+    })
     .attr("d", function (d) {
-      // var cpx1 = 0;
-      // var cpx2 = 0.5 * config.radius;
-      // var cpy1 = 0;
-      // var cpy2 = 0.5 * config.radius;
-      // var x = config.radius;
-      // var y = config.radius;
-      // var wire_path = d3.path();
-      // wire_path.moveTo(0, config.radius);
-      // wire_path.bezierCurveTo(cpx1, cpy1, cpx2, cpy2, x, y);
+      // start the wire if we have a destination...
+      let [node, node_id] = d;
       var wire_path = d3.path();
-      wire_path.moveTo(d.r * 0.9, d.r * 0.9);
-      wire_path.lineTo(d.r * 2, d.r * 2);
-      var returned_path = d.data.dest_node_ids ? wire_path : null;
+      wire_path.moveTo(0, node.r);
+      // wire_path.lineTo(node.r * 2, node.r * 2);
+      var dest_node = wiring_diagram.select(`g.node[data-id='${node_id}']`);
+      bracket_regex = /\(([^)]*)\)/;
+      var dest_loc = bracket_regex.exec(dest_node.attr("transform"))[1];
+      var [dest_x, dest_y] = dest_loc.split(",");
+      var rel_x = parseFloat(dest_x) - node.x;
+      var rel_y = parseFloat(dest_y) - node.y;
+      // console.log(`Paired with node ${node_id} at (${rel_x},${rel_y})`);
+      // wire_path.lineTo(rel_x, rel_y);
+      dest_radius = dest_node.select("circle").attr("r");
+      rel_y += dest_radius;
+      var cpx1 = rel_x / 2;
+      var cpy1 = rel_x;
+      // console.log("Curve check:", cpx1, cpy1, rel_x, rel_y);
+      wire_path.quadraticCurveTo(cpx1, cpy1, rel_x, rel_y);
+      // wire_path.bezierCurveTo(cpx1, cpy1, cpx2, cpy2, rel_x, rel_y);
+      var returned_path = node.data.dest_node_ids ? wire_path : null;
       return returned_path;
     })
-    .attr("stroke", "black")
+    .attr("stroke", config.fg_col)
     .attr("fill", "none");
 }
 
